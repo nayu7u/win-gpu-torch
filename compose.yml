@@ -1,0 +1,9 @@
+services:
+  web:
+    build:
+      context: .
+    volumes:
+      - ./:/workspace
+    command: python sample.py
+    tty: true
+
