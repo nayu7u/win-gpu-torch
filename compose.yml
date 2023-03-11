@@ -4,6 +4,12 @@ services:
       context: .
     volumes:
       - ./:/workspace
-    command: python sample.py
+    command: /bin/bash
+      # command: python sample.py && /bin/bash
     tty: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
 

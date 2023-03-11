@@ -1,40 +1,53 @@
 # https://qiita.com/kenta1984/items/7f3a5d859a15b20657f3
 
 import torch
-from transformers import BertJapaneseTokenizer, BertForMaskedLM
+import sys
+from transformers import BertJapaneseTokenizer, BertModel
+
+print(torch.cuda.is_available())
+
+# load markdown files
+with open("./documents/2_2_release_notes.md", "r") as f:
+    lines = f.readlines()
 
 # Load pre-trained tokenizer
 tokenizer = BertJapaneseTokenizer.from_pretrained('cl-tohoku/bert-base-japanese-whole-word-masking')
 
-# Tokenize input
-text = 'テレビでサッカーの試合を見る。'
-tokenized_text = tokenizer.tokenize(text)
-# ['テレビ', 'で', 'サッカー', 'の', '試合', 'を', '見る', '。']
-
-# Mask a token that we will try to predict back with `BertForMaskedLM`
-masked_index = 2
-tokenized_text[masked_index] = '[MASK]'
-# ['テレビ', 'で', '[MASK]', 'の', '試合', 'を', '見る', '。']
-
-# Convert token to vocabulary indices
-indexed_tokens = tokenizer.convert_tokens_to_ids(tokenized_text)
-# [571, 12, 4, 5, 608, 11, 2867, 8]
-
-# Convert inputs to PyTorch tensors
-tokens_tensor = torch.tensor([indexed_tokens])
-# tensor([[ 571,   12,    4,    5,  608,   11, 2867,    8]])
-
 # Load pre-trained model
-model = BertForMaskedLM.from_pretrained('cl-tohoku/bert-base-japanese-whole-word-masking')
+model = BertModel.from_pretrained('cl-tohoku/bert-base-japanese-whole-word-masking')
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
+model.to(device)
 model.eval()
 
-# Predict
-with torch.no_grad():
-    outputs = model(tokens_tensor)
-    predictions = outputs[0][0, masked_index].topk(5) # 予測結果の上位5件を抽出
+def t2v(model, tokenizer, text):
+    tokens = tokenizer(text)["input_ids"]
+    inputs = torch.tensor(tokens, device=device).reshape(1, -1)
+    with torch.no_grad():
+        outputs = model(inputs, output_hidden_states=True)
+        last_hidden_state = outputs.last_hidden_state[0]
+        averaged_hidden_state = last_hidden_state.sum(dim=0) / len(last_hidden_state)
+    return averaged_hidden_state
 
-# Show results
-for i, index_t in enumerate(predictions.indices):
-    index = index_t.item()
-    token = tokenizer.convert_ids_to_tokens([index])[0]
-    print(i, token)
+def search_similarity(query_embedding, lines, embeddings):
+    similarities = []
+    for line, embedding in zip(lines, embeddings):
+        similarity = torch.nn.functional.cosine_similarity(query_embedding, embedding, dim=0)
+        similarities.append([similarity, line]) 
+    return sorted(similarities)
+    #return sorted(similarities, reverse=True)
+
+embeddings = []
+for line in lines:
+    embeddings.append(t2v(model, tokenizer, line))
+
+
+while True:
+    print("plese input sentence!")
+    #s = input()
+    s = "キャッシュを効かせる"
+    query = t2v(model, tokenizer, s)
+    results = search_similarity(query, lines, embeddings)
+    for result in results:
+        print(result)
+    break
